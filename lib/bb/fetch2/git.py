@@ -492,6 +492,12 @@ class Git(FetchMethod):
             raise bb.fetch2.UnpackError("No up to date source found: " + "; ".join(source_error), ud.url)
 
         repourl = self._get_repo_url(ud)
+        # Convert repourl to relative path to mirror, if mirrored.
+        if 'file://' in repourl:
+            repoabs = repourl[repourl.index('://') + 3:]
+            reporel = os.path.relpath(repoabs, destdir)
+            repourl = reporel
+
         runfetchcmd("%s remote set-url origin %s" % (ud.basecmd, repourl), d, workdir=destdir)
 
         if self._contains_lfs(ud, d, destdir):
@@ -513,6 +519,23 @@ class Git(FetchMethod):
                             branchname), d, workdir=destdir)
             else:
                 runfetchcmd("%s checkout %s" % (ud.basecmd, ud.revisions[ud.names[0]]), d, workdir=destdir)
+
+        # Overwrite alternate (-s) path with the equivalent relative in this OE
+        # setup. Alternate path is to/from the objects path! Also the // seems
+        # to be meaningful.
+        altrel = os.path.join('../..', os.path.relpath(ud.clonedir, destdir))
+        if ud.bareclone:
+            altfile = os.path.join(destdir, 'objects/info/alternates')
+        else:
+            altfile = os.path.join(destdir, '.git/objects/info/alternates')
+
+        try:
+            alt = open(altfile, "w")
+            alt.write(altrel + "//objects\n")
+            alt.close()
+        except Exception as exc:
+            bb.error("Failure while bending the Fetcher behavior: %s" % (exc))
+            return False
 
         return True
 
